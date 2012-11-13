@@ -1,0 +1,337 @@
+<?php
+// $Id: uc_cmpay.module,v 1.0.0.6 2011/10/13 16:03:56 Felix $
+
+/**
+ * Implementation of hook_menu().
+ */
+function uc_cmpay_menu() {
+  $items = array();
+  
+  $items ['cart/cmpay/return'] = array('title' => t('cmpay payment return'), 
+    'page callback' => 'uc_cmpay_return', 
+    'access callback' => 'uc_cmpay_ipn_access', 
+    'type' => MENU_CALLBACK);
+  $items ['cart/cmpay/notify'] = array('title' => t('cmpay payment notify'), 
+    'page callback' => 'uc_cmpay_notify', 
+    'access callback' => 'uc_cmpay_ipn_access', 
+    'type' => MENU_CALLBACK);
+  
+  return $items;
+}
+function uc_cmpay_ipn_access() {
+  return TRUE;
+}
+
+function uc_cmpay_payment_method() {
+  drupal_add_css(drupal_get_path('module', 'uc_cmpay') .'/uc_cmpay.css', 'module');
+
+	$methods [] = array('id' => 'cmpay', 
+	    'name' => 'cmpay', 
+	    'title' => '<img src="/'.drupal_get_path('module', 'uc_cmpay') .'/uc_cmpay.jpg" width="97" height="39" alt="手机支付" />(个别浏览器暂时无法使用)',
+	    'review' => 'cmpay', 
+	    'desc' => t('Redirect to cmpay.10086.cn to pay.'), 
+	    'callback' => 'uc_payment_method_cmpay',  // cmpay的帐号设置页面
+	    'weight' => 0, 
+	    'checkout' => TRUE, 
+	    'no_gateway' => TRUE
+	); 
+  return $methods;
+}
+
+function uc_payment_method_cmpay($op, &$arg1) {
+  switch ($op) {
+    case 'settings':
+      $form['uc_cmpay_merchantId'] = array(
+        '#type' => 'textfield',
+        '#title' => t('商户编号'),
+        '#description' => t('你的商家服务中的商户编号.'),
+        '#default_value' => variable_get('uc_cmpay_merchantId', '888073157340001'),
+      );
+      $form['uc_cmpay_signKey'] = array(
+        '#type' => 'textfield',
+        '#title' => t('安全校验码'),
+        '#description' => t('你的商家服务中的安全校验码.'),
+        '#default_value' => variable_get('uc_cmpay_signKey', 'o5QLVefRcE2PseQpldj1gJgNsD4A1qDdzYNF1Sj91cz1Ng40KciSFzF1mS1Re7Mz'),
+      );
+      $form['uc_cmpay_reqUrl'] = array(
+        '#type' => 'textfield',
+        '#title' => t('接口地址'),
+        '#description' => t('手机支付接口.'),
+        '#default_value' => variable_get('uc_cmpay_reqUrl', 'https://ipos.10086.cn/ips/cmpayService'),
+      );
+    
+      return $form;
+  }
+}
+
+function uc_cmpay_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'uc_cart_checkout_review_form' && ($order_id = intval($_SESSION ['cart_order'])) > 0) {
+    $order = uc_order_load($order_id);
+    $onenode = node_load($order->products[0]->nid);
+    if($order->payment_method=='cmpay'){
+		module_load_include('inc', 'uc_cmpay', 'uc_cmpay');
+	    //设置请求参数start
+		$type         = "DirectPayConfirm";	
+		$reqUrl       = $GLOBALS['reqUrl'];
+		$ipAddress    = getClientIP();
+		$characterSet = $GLOBALS['characterSet'];
+		$callbackUrl  = $GLOBALS['callbackUrl'];
+		$notifyUrl    = $GLOBALS['notifyUrl'];
+		$merchantId   = $GLOBALS['merchantId'];
+		$requestId    = $GLOBALS['requestId'];
+		$signType     = $GLOBALS['signType'];
+		$version      = $GLOBALS['version'];		
+		$amount 	  = $order->order_total;
+		$amount 	  = $amount * 100;
+		$bankAbbr     = '';
+		//$currency     = $_POST['currency'];
+		$currency     = '00';
+		$orderDate    = date(Ymd);
+		$orderId 	  = $order_id;
+		$merAcDate    = date(Ymd);
+		$period 	  = '1';
+		$periodUnit   = '02';
+		$merchantAbbr = '';
+		$productDesc  = '';
+		$productId    = $order->products[0]->nid;
+		$productName  = $onenode->field_short_title[0]['value'];
+		$productName  = iconv('utf-8','gb2312',$productName);
+		$productNum   = '';
+		$reserved1    = '';
+		$reserved2    = '';
+		$userToken    = '';
+		$showUrl 	  = '';
+		$couponsFlag  = '';  
+	    //设置请求参数 end
+	    
+	  	//组织签名数据	
+	    $signData = $characterSet.$callbackUrl.$notifyUrl.$ipAddress
+			         .$merchantId  .$requestId  .$signType .$type
+			         .$version     .$amount     .$bankAbbr .$currency
+			         .$orderDate   .$orderId    .$merAcDate .$period   .$periodUnit
+			         .$merchantAbbr.$productDesc.$productId.$productName
+			         .$productNum  .$reserved1  .$reserved2.$userToken
+			         .$showUrl     .$couponsFlag;			
+			
+	    $signKey=$GLOBALS['signKey'];		
+	    //MD5方式签名				
+	    $hmac=MD5sign($signKey,$signData);
+	
+		$requestData = array();
+		$requestData["characterSet"] = $characterSet;
+		$requestData["callbackUrl"]  = $callbackUrl;
+		$requestData["notifyUrl"]    = $notifyUrl;
+		$requestData["ipAddress"]    = $ipAddress;
+		$requestData["merchantId"]   = $merchantId;
+		$requestData["requestId"]    = $requestId;
+		$requestData["signType"]     = $signType;
+		$requestData["type"]         = $type; 
+		$requestData["version"]      = $version;
+		$requestData["hmac"]         = $hmac;	 
+		$requestData["amount"]       = $amount; 	      
+		$requestData["bankAbbr"]     = $bankAbbr;      
+		$requestData["currency"]     = $currency;      
+		$requestData["orderDate"]    = $orderDate;     
+		$requestData["orderId"]      = $orderId; 	 
+		$requestData["merAcDate"]    = $merAcDate;   
+		$requestData["period"]       = $period; 	      
+		$requestData["periodUnit"]   = $periodUnit; 
+		$requestData["merchantAbbr"] = $merchantAbbr;   
+		$requestData["productDesc"]  = $productDesc;   
+		$requestData["productId"]    = $productId;     
+		$requestData["productName"]  = $productName;   
+		$requestData["productNum"]   = $productNum;    
+		$requestData["reserved1"]    = $reserved1;     
+		$requestData["reserved2"]    = $reserved2;     
+		$requestData["userToken"]    = $userToken;         	      
+		$requestData["showUrl"] 	 = $showUrl; 		  
+		$requestData["couponsFlag"]  = $couponsFlag;
+
+		//http请求到手机支付平台
+	    $sTotalString = POSTDATA($reqUrl,$requestData);
+	    $recv = $sTotalString["MSG"];
+	    $recvArray = parseRecv($recv);
+
+		$code=$recvArray["returnCode"];
+		$payUrl = '';
+		if ($code!="000000") {
+			$text = "code:".$code."</br>msg:".iconv('gb2312','utf-8',$recvArray["message"]);
+			watchdog('uc_cmpay', $text, array(), WATCHDOG_NOTICE);
+			drupal_set_message(t($text));
+		 	drupal_goto('cart');
+		}
+		else
+		{
+			$vfsign=$recvArray["merchantId"].$recvArray["requestId"]
+				.$recvArray["signType"]  .$recvArray["type"]
+				.$recvArray["version"]   .$recvArray["returnCode"]
+				.$recvArray["message"]   .$recvArray["payUrl"];
+			$hmac=MD5sign($signKey,$vfsign);
+			$vhmac=$recvArray["hmac"];   
+			if($hmac!=$vhmac)
+			{
+				$text = "验证签名失败!";
+				watchdog('uc_cmpay', $text, array(), WATCHDOG_NOTICE);
+				drupal_set_message(t($text));
+			 	drupal_goto('cart');
+			}
+			else
+			{
+				$payUrl = $recvArray["payUrl"];
+				//返回url处理
+				$rpayUrl= parseUrl($payUrl);
+				$submit_url = $rpayUrl["url"];
+			}     
+		}
+
+		unset($form ['submit']);
+		$form ['#prefix'] = '<table id="two-checkout-review-table"><tr><td>';
+		$cmpayimg = '<img src="/'.drupal_get_path('module', 'uc_cmpay') .'/uc_cmpay.jpg" width="102" height="32" />';
+		$form ['#suffix'] = "</td><td><a href=$submit_url>$cmpayimg</a></td></tr></table>";     			   			  
+
+    }
+  }
+}
+
+function uc_cmpay_return() {
+  	module_load_include('inc', 'uc_cmpay', 'uc_cmpay');
+	//接收手机支付平台页面通知传递的报文 start
+	$merchantId 	= $_POST["merchantId"];
+	$payNo 	  		= $_POST["payNo"];
+	$returnCode 	= $_POST["returnCode"];
+	$message	  	= $_POST["message"];
+	$signType       = $_POST["signType"];
+	$type         	= $_POST["type"];
+	$version        = $_POST["version"];
+	$amount         = $_POST["amount"];
+	$amtItem		= $_POST["amtItem"];		
+	$bankAbbr	  	= $_POST["bankAbbr"];
+	$mobile 		= $_POST["mobile"];
+	$orderId		= $_POST["orderId"];
+	$payDate		= $_POST["payDate"];
+	$accountDate    = $_POST["accountDate"];
+	$reserved1	  	= $_POST["reserved1"];
+	$reserved2	  	= $_POST["reserved2"];
+	$status			= $_POST["status"];
+	$orderDate      = $_POST["orderDate"];
+	$fee            = $_POST["fee"];
+	$vhmac			= $_POST["hmac"];
+	$signKey        = $GLOBALS['signKey'];
+	$version        = $GLOBALS['version'];
+	//接收手机支付平台页面通知传递的报文 end
+	
+	//组装签字符串
+	$signData = $merchantId .$payNo.$returnCode .$message
+	       .$signType   .$type        .$version    .$amount
+	       .$amtItem    .$bankAbbr    .$mobile     .$orderId
+	       .$payDate    .$accountDate .$reserved1  .$reserved2
+	       .$status     .$orderDate   .$fee;
+       
+	//MD5方式签名
+	$hmac=MD5sign($signKey,$signData);
+	
+	//此处000000仅代表程序无错误。订单是否支付成功是以支付结果（status）为准
+	if($returnCode!=000000)
+	{
+		$text = "code:".$returnCode."</br>msg:".iconv('gb2312','utf-8',$message);
+		watchdog('uc_cmpay', $text, array(), WATCHDOG_NOTICE);
+		drupal_set_message(t($text));
+		drupal_goto('cart');
+	}
+	if($hmac != $vhmac){
+		$text = "验签失败";
+		watchdog('uc_cmpay', $text, array(), WATCHDOG_NOTICE);
+		drupal_set_message(t($text));
+		drupal_goto('cart');
+	}		
+	else{
+		/*商户在此处业务处理*/
+		$order = uc_order_load($orderId);
+		if (intval($_SESSION ['cart_order']) != $orderId) {
+			drupal_set_message(t('Thank you for your order! We will be notified by cmpay that we have received your payment.'));
+			drupal_goto('cart');
+		}
+		  
+		// Ensure the payment method is cmpay.
+		if ($order->payment_method != 'cmpay') {
+			drupal_goto('cart');
+		}
+		
+		if ($status == 'SUCCESS') {
+		  $amount = $amount/100;
+		  $order = $order = uc_order_load($orderId);
+	      $comment = t('cmpay pay No.: @payNo', array('@payNo' => $payNo));
+	      uc_payment_enter($orderId, 'cmpay', $amount, $order->uid, NULL, $comment);
+	      uc_order_comment_save($orderId, $order->uid, t('Payment of @amount submitted through cmpay.', array('@amount' => $amount)), 'order', 'payment_received');
+	      uc_order_comment_save($orderId, $order->uid, t('cmpay notify reported a payment of @amount.', array('@amount' => $amount)));
+	    }
+		   
+		// This lets us know it's a legitimate access of the complete page.
+		$_SESSION ['do_complete'] = TRUE;
+		  
+		drupal_goto('cart/checkout/complete');
+	}
+}
+
+function uc_cmpay_notify() {
+	module_load_include('inc', 'uc_cmpay', 'uc_cmpay');
+	//接收手机支付平台后台通知数据start
+	$merchantId 	= $_POST["merchantId"];
+	$payNo 	  		= $_POST["payNo"];
+	$returnCode 	= $_POST["returnCode"];
+	$message	  	= $_POST["message"];
+	$signType      	= $_POST["signType"];
+	$type         	= $_POST["type"];
+	$verNo        	= $_POST["version"];
+	$amount         = $_POST["amount"];
+	$amtItem		= $_POST["amtItem"];		
+	$bankAbbr	  	= $_POST["bankAbbr"];
+	$mobile 		= $_POST["mobile"];
+	$orderId		= $_POST["orderId"];
+	$payDate		= $_POST["payDate"];
+	$accountDate    = $_POST["accountDate"];
+	$reserved1	  	= $_POST["reserved1"];
+	$reserved2	  	= $_POST["reserved2"];
+	$status			= $_POST["status"];
+	$orderDate      = $_POST["orderDate"];
+	$fee            = $_POST["fee"];
+	$vhmac			= $_POST["hmac"];
+	//接收手机支付平台后台通知数据end
+	$signKey        = $GLOBALS['signKey'];
+	$version        = $GLOBALS['version'];
+	if($returnCode!=000000)
+	{
+		//此处表示后台通知产生错误
+		echo $returnCode.decodeUtf8($message);
+		exit();
+	}
+	
+	$signData = $merchantId .$payNo       .$returnCode .$message
+	       .$signType   .$type        .$version    .$amount
+	       .$amtItem    .$bankAbbr    .$mobile     .$orderId
+	       .$payDate    .$accountDate .$reserved1  .$reserved2
+	       .$status     .$orderDate  .$fee;
+	$hmac=MD5sign($signKey,$signData);	
+	if($hmac != $vhmac)
+		//此处无法信息数据来自手机支付平台
+		echo "验签失败";
+	else{
+		//商户在此处做业务处理，处理完毕必须响应SUCCESS
+		if ($status == 'SUCCESS') {
+		  $amount = $amount/100;
+		  $order = $order = uc_order_load($orderId);
+		  if($order->states == 'in_checkout' ){
+		  	  $comment = t('cmpay pay No.: @payNo', array('@payNo' => $payNo));
+		      uc_payment_enter($orderId, 'cmpay', $amount, $order->uid, NULL, $comment);
+		      uc_cart_complete_sale($order);
+		      uc_order_comment_save($orderId, 0, t('Payment of @amount submitted through cmpay.', array('@amount' => $amount)), 'order', 'payment_received');
+		      uc_order_comment_save($orderId, 0, t('cmpay notify reported a payment of @amount.', array('@amount' => $amount)));
+		  }
+	      
+	    }
+		echo "SUCCESS";
+	}
+  
+}
+
+

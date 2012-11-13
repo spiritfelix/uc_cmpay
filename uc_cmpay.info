@@ -1,0 +1,7 @@
+; $Id: uc_cmpay.info,v 1.0 2009/01/01 00:00:00 qinshuguo Exp $
+name = cmpay
+description = Enable to process payments using cmpay.10086.cn .
+dependencies[] = uc_payment
+package = Ubercart - payment
+core = 6.x
+php = 5.0

@@ -1,0 +1,18 @@
+#payment-pane .form-radios .form-item {
+  float: left;
+}
+input.form-radio{
+  vertical-align: bottom; 
+  margin-bottom:18px; 
+  margin-right:0px;
+}
+#edit-panes-payment-payment-method-points {
+  vertical-align: top;
+  margin-top: 4px; 
+}
+#edit-panes-payment-payment-method-points-wrapper {
+  width: 100%;
+}
+#edit-panes-payment-payment-method-cmpay-wrapper {
+  width: 100%;
+}

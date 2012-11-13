@@ -1,0 +1,4 @@
+uc_cmpay for drupal
+
+Enable to process payments using cmpay.10086.cn
+dependencies: uc_payment
